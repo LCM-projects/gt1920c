@@ -1,8 +1,8 @@
+#include <stdexcept>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string>
 #include <string.h>
-#include <stdexcept>
+#include <string>
 
 #include <arpa/inet.h>
 #include <pthread.h>
@@ -11,7 +11,9 @@
 #include <unistd.h>
 
 #include <PvApi.h>
-// #include <ImageLib.h>
+
+#include <opencv2/core/core.hpp>
+#include <opencv2/highgui/highgui.hpp>
 
 // number of frames to be used
 #define FRAMESCOUNT 1
@@ -23,14 +25,12 @@ typedef struct {
   tPvHandle Handle;
   tPvFrame Frames[FRAMESCOUNT];
   bool PTPSynced; // Are we in sync?
-#ifdef _WINDOWS
-  HANDLE ThHandle;
-  DWORD ThId;
-#else
   pthread_t ThHandle;
-#endif
 
 } tCamera;
+
+uint32_t WIDTH = 1936; //1024;
+uint32_t HEIGHT = 1456; //768;
 
 // session data
 typedef struct {
@@ -45,56 +45,53 @@ typedef struct {
 // global data
 tSession GSession;
 
-void SetConsoleCtrlHandler(void (*func)(int), int junk) {
-  signal(SIGINT, func);
-}
-
 double get_time() {
   struct timespec the_tp;
-  clock_gettime( CLOCK_REALTIME, &the_tp );
-  return ((double) (the_tp.tv_sec)) + 1.0e-9*the_tp.tv_nsec;
+  clock_gettime(CLOCK_REALTIME, &the_tp);
+  return ((double)(the_tp.tv_sec)) + 1.0e-9 * the_tp.tv_nsec;
 }
 
-std::string get_error_msg(int cam_id, const std::string& func, tPvErr err) {
-  return "Camera[" + std::to_string(cam_id) + "]: " + func + ", err: " + std::to_string(err);
+std::string get_error_msg(int cam_id, const std::string &func, tPvErr err) {
+  return "Camera[" + std::to_string(cam_id) + "]: " + func + ", err: " +
+         std::to_string(err);
 }
 
-std::string get_error_msg(int cam_id, const std::string& func) {
+std::string get_error_msg(int cam_id, const std::string &func) {
   return "Camera[" + std::to_string(cam_id) + "]: " + func;
 }
 
-// Frame capture callback. This is queued when an exposure end event has happened.
-void F_FrameCaptureCallback(tPvFrame* Frame) {
+// Frame capture callback. This is queued when an exposure end event has
+// happened.
+void F_FrameCaptureCallback(tPvFrame *Frame) {
   if (Frame->Status == ePvErrSuccess) {
-		printf("Frame: %lu returned successfully\n", Frame->FrameCount);
-    unsigned long cam_time =
-        (Frame->TimestampHi << 32) | (Frame->TimestampLo);
+    printf("Frame: %lu returned successfully\n", Frame->FrameCount);
+    unsigned long cam_time = (Frame->TimestampHi << 32) | (Frame->TimestampLo);
     unsigned long pc_time = get_time() * 1e9;
     double diff = ((double)pc_time - (double)cam_time) * 1e-9;
     printf("Frame: [%lu], cam time [%lu], pc time [%lu] diff [%g]\n",
-        Frame->FrameCount, cam_time, pc_time, diff);
-  }
-	else if (Frame->Status == ePvErrDataMissing)
-		//Possible improper network card settings. See GigE Installation Guide.
-		printf("Frame: %lu dropped packets\n", Frame->FrameCount);
-	else if (Frame->Status == ePvErrCancelled)
-		printf("Frame cancelled %lu\n", Frame->FrameCount);
-	else
-		printf("Frame: %lu Error: %u\n", Frame->FrameCount, Frame->Status);
+           Frame->FrameCount, cam_time, pc_time, diff);
+  } else if (Frame->Status == ePvErrDataMissing)
+    // Possible improper network card settings. See GigE Installation Guide.
+    printf("Frame: %lu dropped packets\n", Frame->FrameCount);
+  else if (Frame->Status == ePvErrCancelled)
+    printf("Frame cancelled %lu\n", Frame->FrameCount);
+  else
+    printf("Frame: %lu Error: %u\n", Frame->FrameCount, Frame->Status);
 
   /*
   if(Frame->Status != ePvErrCancelled) {
-    if (PvCaptureQueueFrame(GSession.Cameras[0].Handle, Frame, F_FrameCaptureCallback) != ePvErrSuccess) {
+    if (PvCaptureQueueFrame(GSession.Cameras[0].Handle, Frame,
+  F_FrameCaptureCallback) != ePvErrSuccess) {
       throw std::logic_error(get_error_msg(0, "PvCaptureQueueFrame failed"));
     }
   }
   */
 }
 
-// Event callback.  This is called by PvApi when camera event(s) occur.
+// Event callback. This is called by PvApi when camera event(s) occur.
 void F_CameraEventCallback(void *pContext, tPvHandle CamHandle,
-    const tPvCameraEvent *EventList,
-    unsigned long EventListLength) {
+                           const tPvCameraEvent *EventList,
+                           unsigned long EventListLength) {
   tCamera *Camera = (tCamera *)pContext;
 
   // multiple events may have occurred for this one callback
@@ -133,27 +130,29 @@ void CameraSetup(tCamera &Camera) {
   unsigned long FrameSize = 0;
 
   // Set image size and ROI.
-  uint32_t width = 640; // 1024;
-  uint32_t height = 480; //768;
   uint32_t max_width = 1936;
   uint32_t max_height = 1456;
-  uint32_t roi_x = (max_width - width) / 2;
-  uint32_t roi_y = (max_height - height) / 2;
-  if (PvAttrUint32Set(Camera.Handle, "Height", height) != ePvErrSuccess ||
-      PvAttrUint32Set(Camera.Handle, "Width", width) != ePvErrSuccess ||
+
+  uint32_t roi_x = (max_width - WIDTH) / 2;
+  uint32_t roi_y = (max_height - HEIGHT) / 2;
+  if (PvAttrUint32Set(Camera.Handle, "Height", HEIGHT) != ePvErrSuccess ||
+      PvAttrUint32Set(Camera.Handle, "Width", WIDTH) != ePvErrSuccess ||
       PvAttrUint32Set(Camera.Handle, "RegionX", roi_x) != ePvErrSuccess ||
       PvAttrUint32Set(Camera.Handle, "RegionY", roi_y) != ePvErrSuccess) {
-    throw std::logic_error(get_error_msg(Camera.ID, "failed to set img size and ROI."));
+    throw std::logic_error(
+        get_error_msg(Camera.ID, "failed to set img size and ROI."));
   }
 
   if (PvAttrEnumSet(Camera.Handle, "PixelFormat", "Bayer8") != ePvErrSuccess) {
-    throw std::logic_error(get_error_msg(Camera.ID, "failed to set pixel format."));
+    throw std::logic_error(
+        get_error_msg(Camera.ID, "failed to set pixel format."));
   }
 
   // Calculate frame buffer size
   if ((err = PvAttrUint32Get(Camera.Handle, "TotalBytesPerFrame",
-                                 &FrameSize)) != ePvErrSuccess) {
-    throw std::logic_error(get_error_msg(Camera.ID, "failed to set pixel format.", err));
+                             &FrameSize)) != ePvErrSuccess) {
+    throw std::logic_error(
+        get_error_msg(Camera.ID, "failed to set pixel format.", err));
   }
 
   // allocate the frame buffers
@@ -169,41 +168,49 @@ void CameraSetup(tCamera &Camera) {
   // Use PvUint32Set(handle, "PacketSize", MaxAllowablePacketSize) instead. See
   // network card properties
   // for max allowable PacketSize/MTU/JumboFrameSize.
-  if ((err = PvCaptureAdjustPacketSize(Camera.Handle, 8228)) !=
-      ePvErrSuccess) {
-    throw std::logic_error(get_error_msg(Camera.ID, "failed to adjust packet size", err));
+  if ((err = PvCaptureAdjustPacketSize(Camera.Handle, 8228)) != ePvErrSuccess) {
+    throw std::logic_error(
+        get_error_msg(Camera.ID, "failed to adjust packet size", err));
   }
 
-  if ((PvAttrUint32Set(Camera.Handle, "StreamBytesPerSecond",
-                       124000000) != ePvErrSuccess)) {
-    throw std::logic_error(get_error_msg(Camera.ID, "failed to set stream bytes per second", err));
+  if ((PvAttrUint32Set(Camera.Handle, "StreamBytesPerSecond", 124000000) !=
+       ePvErrSuccess)) {
+    throw std::logic_error(
+        get_error_msg(Camera.ID, "failed to set stream bytes per second", err));
   }
 
   // start driver capture stream
   if ((err = PvCaptureStart(Camera.Handle)) != ePvErrSuccess) {
-    throw std::logic_error(get_error_msg(Camera.ID, "failed to start capture", err));
+    throw std::logic_error(
+        get_error_msg(Camera.ID, "failed to start capture", err));
   }
 
   // queue frames.
   for (int i = 0; i < FRAMESCOUNT; i++) {
     if ((err = PvCaptureQueueFrame(Camera.Handle, &(Camera.Frames[i]),
                                    F_FrameCaptureCallback)) != ePvErrSuccess) {
-      throw std::logic_error(get_error_msg(Camera.ID, "PvCaptureQueueFrame failed", err));
+      throw std::logic_error(
+          get_error_msg(Camera.ID, "PvCaptureQueueFrame failed", err));
     }
   }
 
   // set the camera in free run, continuous mode
-  if (PvAttrEnumSet(Camera.Handle, "FrameStartTriggerMode", "Freerun") != ePvErrSuccess) {
-    throw std::logic_error(get_error_msg(Camera.ID, "FrameStartTriggerMode to Freerun failed"));
+  if (PvAttrEnumSet(Camera.Handle, "FrameStartTriggerMode", "Freerun") !=
+      ePvErrSuccess) {
+    throw std::logic_error(
+        get_error_msg(Camera.ID, "FrameStartTriggerMode to Freerun failed"));
   }
 
-  if (PvAttrEnumSet(Camera.Handle, "AcquisitionMode", "Continuous") != ePvErrSuccess) {
-    throw std::logic_error(get_error_msg(Camera.ID, "AcquisitionMode to Continuous failed"));
+  if (PvAttrEnumSet(Camera.Handle, "AcquisitionMode", "Continuous") !=
+      ePvErrSuccess) {
+    throw std::logic_error(
+        get_error_msg(Camera.ID, "AcquisitionMode to Continuous failed"));
   }
 
   // Set PTP Mode
   if (PvAttrEnumSet(Camera.Handle, "PtpMode", "Slave") != ePvErrSuccess) {
-    throw std::logic_error(get_error_msg(Camera.ID, "failed to set PTP mode to slave"));
+    throw std::logic_error(
+        get_error_msg(Camera.ID, "failed to set PTP mode to slave"));
   }
 
   // TODO
@@ -264,8 +271,24 @@ bool EventSetup(tCamera &Camera) {
   return true;
 }
 
-void proc_img(const tPvFrame& frame) {
-  printf("w: %lu, h: %lu, format %d, img size %lu\n", frame.Width, frame.Height, frame.Format, frame.ImageSize);
+void proc_img(const tPvFrame &frame, cv::Mat *cv_image) {
+  printf("w: %lu, h: %lu, format %d, img size %lu\n", frame.Width, frame.Height,
+         frame.Format, frame.ImageSize);
+  assert(cv_image->rows == (int)frame.Height);
+  assert(cv_image->cols == (int)frame.Width);
+
+  std::vector<uint8_t> R(frame.Height * frame.Width);
+  std::vector<uint8_t> G(frame.Height * frame.Width);
+  std::vector<uint8_t> B(frame.Height * frame.Width);
+  PvUtilityColorInterpolate(&frame, R.data(), G.data(), B.data(), 0, 0);
+
+  for (size_t i = 0; i < frame.Height; i++) {
+    for (size_t j = 0; j < frame.Width; j++) {
+      size_t idx = i * frame.Width + j;
+      cv_image->at<cv::Vec3b>(i, j) =
+          cv::Vec3b(B.at(idx), G.at(idx), R.at(idx));
+    }
+  }
 }
 
 // main camera thread
@@ -276,36 +299,39 @@ void *ThreadFunc(void *pContext) {
   char IP[128];
   char Name[128];
 
+  cv::Mat cv_img = cv::Mat(HEIGHT, WIDTH, CV_8UC3);
+
   if ((err = PvCameraOpenByAddr(Camera->IP, ePvAccessMaster,
                                 &(Camera->Handle))) == ePvErrSuccess) {
 
     if (((err = PvAttrStringGet(Camera->Handle, "DeviceIPAddress", IP, 128,
-              NULL)) == ePvErrSuccess) &&
+                                NULL)) == ePvErrSuccess) &&
         ((err = PvAttrStringGet(Camera->Handle, "CameraName", Name, 128,
-                                    NULL)) == ePvErrSuccess)) {
+                                NULL)) == ePvErrSuccess)) {
       printf("Cam[%u]: %s [%s] opened\n", Camera->ID, IP, Name);
       CameraSetup(*Camera);
       EventSetup(*Camera);
       if (PvCommandRun(Camera->Handle, "AcquisitionStart") != ePvErrSuccess) {
-        throw std::logic_error(get_error_msg(Camera->ID, "AcquisitionStart failed"));
+        throw std::logic_error(
+            get_error_msg(Camera->ID, "AcquisitionStart failed"));
       }
 
-      while(true) {
-        if ((err = PvCaptureWaitForFrameDone(Camera->Handle, &(Camera->Frames[0]), 1000)) != ePvErrSuccess) {
-          throw std::logic_error(get_error_msg(Camera->ID, "CaptureFrame failed", err));
+      while (true) {
+        if ((err = PvCaptureWaitForFrameDone(Camera->Handle,
+                                             &(Camera->Frames[0]), 1000)) !=
+            ePvErrSuccess) {
+          throw std::logic_error(
+              get_error_msg(Camera->ID, "CaptureFrame failed", err));
         }
 
-        proc_img(Camera->Frames[0]);
+        proc_img(Camera->Frames[0], &cv_img);
+        cv::imshow("Display window", cv_img);
 
-
-
-
-        // ImageWriteTiff("stuff.tiff", &(Camera->Frames[0]));
-        // exit(-1);
-
-        if(Camera->Frames[0].Status != ePvErrCancelled) {
-          if (PvCaptureQueueFrame(Camera->Handle, &(Camera->Frames[0]), F_FrameCaptureCallback) != ePvErrSuccess) {
-            throw std::logic_error(get_error_msg(0, "PvCaptureQueueFrame failed"));
+        if (Camera->Frames[0].Status != ePvErrCancelled) {
+          if (PvCaptureQueueFrame(Camera->Handle, &(Camera->Frames[0]),
+                                  F_FrameCaptureCallback) != ePvErrSuccess) {
+            throw std::logic_error(
+                get_error_msg(0, "PvCaptureQueueFrame failed"));
           }
         }
       }
@@ -317,7 +343,7 @@ void *ThreadFunc(void *pContext) {
   return NULL;
 }
 
-bool init(const std::string& ip_addr) {
+bool init(const std::string &ip_addr) {
   // initialize the PvAPI
   if (PvInitialize() != ePvErrSuccess) {
     throw std::logic_error("Cannot init API");
@@ -345,7 +371,7 @@ bool init(const std::string& ip_addr) {
   for (int i = 0; i < GSession.Count; i++) {
     if (GSession.Cameras[i].IP) {
       pthread_create(&GSession.Cameras[i].ThHandle, NULL, ThreadFunc,
-          &GSession.Cameras[i]);
+                     &GSession.Cameras[i]);
     }
   }
 
@@ -353,6 +379,8 @@ bool init(const std::string& ip_addr) {
 }
 
 int main() {
+  cv::namedWindow("Display window", cv::WINDOW_AUTOSIZE);
+
   init("192.168.80.100");
-  while(1);
+  cv::waitKey(0);
 }
