@@ -1,0 +1,31 @@
+*******************************************************************************
+How to configure ethernet
+Go to "Edit connections" in the network manager.
+In "IPv4 Settings", change "Method" to "Manual".
+Add address "192.168.80.99", this somehow set's the camera's IP to .100
+In "Routes", check "Use this connection only for resources on its network".
+
+*******************************************************************************
+How to setup PTP (time sync)
+$ sudo apt-get install ptpd
+
+Then in a terminal say:
+$ sudo ptpd -i eno1 -W -t -C
+
+eno1 is the ethernet interface that the camera is connected to. There is some
+requirement on the ethernet adaptor, I don't know the details, but chances are
+don't connect to the USB3 ones, try to use the ones on the motherboard.
+
+This turns this computer into the ptpd master, the gt1920c driver will
+configure all the cameras as slaves, which means that their reported timestamps
+will be synced w.r.t this computer's clock.
+
+*******************************************************************************
+To make and run
+$ mkdir build
+$ cd build
+$ cmake ..
+$ make
+$ ../bin/new_driver_test
+
+*******************************************************************************

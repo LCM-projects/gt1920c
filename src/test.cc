@@ -29,8 +29,8 @@ typedef struct {
 
 } tCamera;
 
-uint32_t WIDTH = 1936; //1024;
-uint32_t HEIGHT = 1456; //768;
+uint32_t WIDTH = 1936;  // 1024;
+uint32_t HEIGHT = 1456; // 768;
 
 // session data
 typedef struct {

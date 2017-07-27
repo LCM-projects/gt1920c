@@ -13,7 +13,7 @@ ${CAMERA_INCLUDE_DIR}
 ${OpenCV_INCLUDE_DIRS}
 )
 
-add_definitions(-std=c++11 -g -O3 -fext-numeric-literals -Wall -D_LINUX -D_x64)
+add_definitions(-std=c++17 -g -O3 -fext-numeric-literals -Wall -D_LINUX -D_x64)
 
 MESSAGE(STATUS "CAMERA_INCLUDE_DIR: " ${CAMERA_INCLUDE_DIR})
 MESSAGE(STATUS "CAMERA_LIB: " ${CAMERA_LIB})
